@@ -6,6 +6,7 @@ type FromEntries<T> = T extends [infer Key, unknown][]
 
 type NoNull<T> = T extends null ? never : T;
 
+/** @ignore */
 export type ParseObject<
   T extends string,
 > = T extends `` ? []
@@ -14,6 +15,7 @@ export type ParseObject<
   : T extends `${infer K}:${infer V}` ? [[K, TypeMapper<V>]]
   : never;
 
+/** @ignore */
 export type ParseObjectModel<
   T extends string,
 > = T extends `` ? []
@@ -22,6 +24,7 @@ export type ParseObjectModel<
   : T extends `${infer K}:${infer V}` ? [[K, TypeRuntimeModel<V>]]
   : never;
 
+/** @ignore */
 export type ParameterMapper<
   T extends string,
 > = T extends "" ? []
@@ -39,10 +42,18 @@ export type ParameterMapper<
     ? [(...args: ParameterMapper<A>) => TypeMapper<R>, ...ParameterMapper<next>]
   : never;
 
+/**
+ * Map type description to type
+ * 
+ * @example
+ * TypeMapper<"s"> = string
+ * TypeMapper<"{str:s,num:n}"> = { str: string; num: number }
+ */
 export type TypeMapper<
   T extends string,
 > = ParameterMapper<T> extends [infer S] ? S : never;
 
+/** @ignore */
 export type ParameterRuntimeModel<
   T extends string,
 > = T extends "" ? []
@@ -76,15 +87,25 @@ export type ParameterRuntimeModel<
   ]
   : never;
 
+/**
+ * Type description to type model
+ * 
+ * @example
+ * TypeRuntimeModel<"s"> = { type: "simple", name: "string" }
+ */
 export type TypeRuntimeModel<
   T extends string,
 > = ParameterRuntimeModel<T> extends [infer S] ? S : never;
 
+/** @ignore */
 export type TypeNames = "simple" | "nullable" | "array" | "object" | "function";
+/** @ignore */
 export type SimpleTypeNames = "null" | "number" | "string" | "boolean";
 
+/** @ignore */
 export type LooseObjectModel = Array<[string, LooseTypeRuntimeModel]>;
 
+/** @ignore */
 export type LooseSimpleTypeRuntimeModel<
   T extends SimpleTypeNames = SimpleTypeNames,
 > = {
@@ -92,6 +113,7 @@ export type LooseSimpleTypeRuntimeModel<
   name: T;
 };
 
+/** @ignore */
 export type LooseTypeRuntimeModel<
   X extends TypeNames = TypeNames,
 > = X extends "simple" ? LooseSimpleTypeRuntimeModel

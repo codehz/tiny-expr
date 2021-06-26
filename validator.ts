@@ -112,6 +112,11 @@ function parseType(): SingleParser<LooseTypeRuntimeModel> {
     .or(parseFunction());
 }
 
+/**
+ * Parse type description to type model
+ * @param input Type description
+ * @returns Type model
+ */
 export function parseModel<T extends string>(input: T): TypeRuntimeModel<T> {
   const res = parseType().eos().parse(Streams.ofString(input));
   if (res.isAccepted()) {
@@ -121,6 +126,12 @@ export function parseModel<T extends string>(input: T): TypeRuntimeModel<T> {
   }
 }
 
+/**
+ * Check input value with model
+ * @param model_ Type model
+ * @param input Input object
+ * @returns true if type matched
+ */
 export function evalModel<T extends string>(
   model_: TypeRuntimeModel<T>,
   input: unknown,

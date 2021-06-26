@@ -9,6 +9,9 @@ import {
 } from "./types.ts";
 import { evalModel, parseModel } from "./validator.ts";
 
+/**
+ * Typed variable
+ */
 export class VarModel<M extends string = string> {
   model: TypeRuntimeModel<M>;
   constructor(spec: TypeRuntimeModel<M> | M, public value: TypeMapper<M>) {
@@ -24,6 +27,11 @@ export function lit(val: string): VarModel<"s">;
 export function lit(val: boolean): VarModel<"b">;
 export function lit(): VarModel<"x">;
 
+/**
+ * Helper function for convert primitive value to typed variable
+ * @param val Primitive value
+ * @returns Typed variable
+ */
 export function lit(val?: number | string | boolean): unknown {
   if (val == null) {
     return new VarModel("x", null);
@@ -118,6 +126,9 @@ function acceptType(
   return JSON.stringify(merged) == JSON.stringify(expected);
 }
 
+/**
+ * The VM
+ */
 export class VM {
   #environment = new Map<string, VarModel>();
 
@@ -132,6 +143,12 @@ export class VM {
     model: VarModel<M>,
   ): void;
 
+  /**
+   * Set variable
+   * @param name Variable name
+   * @param spec Type description
+   * @param value Value
+   */
   set<M extends string>(
     name: string,
     spec: M | VarModel<M>,
@@ -145,10 +162,19 @@ export class VM {
     );
   }
 
+  /**
+   * Get variable by name
+   * @param name Variable name
+   * @returns Variable
+   */
   get(name: string) {
     return this.#environment.get(name);
   }
 
+  /**
+   * Delete variable
+   * @param name Variable name
+   */
   delete(name: string) {
     this.#environment.delete(name);
   }
@@ -459,6 +485,13 @@ export class VM {
     }
   }
 
+  /**
+   * "precompile" code to function. (do type check early)
+   * @param result Result type description
+   * @param code The code to be compiled
+   * @param selfSpec `this` object's type description
+   * @returns Compiled function
+   */
   compile<M extends string, S extends string>(
     result: M,
     code: string | Expression,
@@ -477,6 +510,13 @@ export class VM {
     return (self: TypeMapper<S>) => this.#eval(code, self) as TypeMapper<M>;
   }
 
+  /**
+   * Eval expression
+   * @param result Result type description
+   * @param code The code
+   * @param self `this`
+   * @returns Result
+   */
   eval<M extends string, S extends string>(
     result: M,
     code: string | Expression,
