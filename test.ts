@@ -1,36 +1,71 @@
-import { assertEquals } from "https://deno.land/std@0.99.0/testing/asserts.ts";
-import { Context, evalWith } from "./mod.ts";
+import {
+  assertEquals,
+  assertThrows,
+} from "https://deno.land/std@0.99.0/testing/asserts.ts";
+import { lit, VM } from "./mod.ts";
 
-const emptyContext: Context = {
-  environment: new Map(),
-  this: {},
-};
+Deno.test("simple", () => {
+  const vm = new VM();
+  const empty = lit();
 
-function testEval<T>(
-  code: string,
-  expected: T,
-  context: Context = emptyContext,
-) {
-  const result = evalWith(code, context);
-  assertEquals(result, expected, `${code}(${result}) != ${expected}`);
-}
-
-Deno.test("simple expression", () => {
-  testEval("1 + 1", 1 + 1);
-  testEval("1 + 2 * 3", 1 + 2 * 3);
-  testEval("false || true", false || true);
-  testEval("invalid", undefined);
-  testEval("1 > 2", 1 > 2);
-  testEval("1 in [1, 2, 3]", 1 in [1, 2, 3]);
+  assertEquals(vm.eval("n", "1+1", empty), 2);
+  assertEquals(vm.eval("s", '"a" + "b"', empty), "ab");
+  assertThrows(
+    () => vm.eval("s", "1+1", empty),
+    TypeError,
+    "require string got number",
+  );
 });
 
-Deno.test("with environment", () => {
-  const xctx: Context = {
-    environment: new Map([["a", 5], ["b", 10]]),
-    this: { c: 6 },
-  };
-  testEval("a", 5, xctx);
-  testEval("a + b", 15, xctx);
-  testEval("[a, b]", [5, 10], xctx);
-  testEval("this.c", 6, xctx);
+Deno.test("object", () => {
+  const vm = new VM();
+  const empty = lit();
+
+  vm.set("obj", "{str:s,num:n}", { str: "test", num: 42 });
+  assertEquals(vm.eval("n", "obj.num", empty), 42);
+  assertEquals(vm.eval("s", "obj.str", empty), "test");
+  assertThrows(
+    () => vm.eval("n", "invalid.value", empty),
+    ReferenceError,
+    '"invalid" not found',
+  );
+  assertThrows(
+    () => vm.eval("n", "obj.invalid", empty),
+    ReferenceError,
+    '"invalid" not exists in object',
+  );
+});
+
+Deno.test("function", () => {
+  const vm = new VM();
+  const empty = lit();
+
+  vm.set("v", lit(42));
+  vm.set("f", "f(n->s)", (x) => x + "");
+
+  assertEquals(vm.eval("s", "f(v)", empty), "42");
+  assertThrows(
+    () => vm.eval("s", "f(true)", empty),
+    TypeError,
+    "require number got boolean",
+  );
+  assertThrows(
+    () => vm.eval("s", "f()", empty),
+    TypeError,
+    "require number got null",
+  );
+});
+
+Deno.test("compile", () => {
+  const vm = new VM();
+  vm.set("f", "f(n->s)", (x) => x + "");
+
+  const compiled = vm.compile("s", "f(this)", "n");
+  assertEquals(compiled(5), "5");
+
+  assertThrows(
+    () => vm.compile("s", "this", "n"),
+    TypeError,
+    "require string got number",
+  );
 });
