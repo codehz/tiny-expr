@@ -1,123 +1,156 @@
+// deno-lint-ignore-file no-explicit-any
+
 type ArrayElement<A> = A extends readonly (infer T)[] ? T : never;
 type Cast<X, Y> = X extends Y ? X : never;
-type FromEntries<T> = T extends [infer Key, unknown][]
-  ? { [K in Cast<Key, string>]: Extract<ArrayElement<T>, [K, unknown]>[1] }
-  : { [key in string]: unknown };
 
-type NoNull<T> = T extends null ? never : T;
+type ParserError<T extends string> = { error: true } & T;
+type EatWhitespace<
+  State extends string,
+> = string extends State ? ParserError<"EatWhitespace got generic string type">
+  : State extends ` ${infer State}` | `\n${infer State}` ? EatWhitespace<State>
+  : State;
 
-/** @ignore */
-export type ParseObject<
-  T extends string,
-> = T extends `` ? []
-  : T extends `${infer K}:${infer V},${infer next}`
-    ? [[K, TypeMapper<V>], ...ParseObject<next>]
-  : T extends `${infer K}:${infer V}` ? [[K, TypeMapper<V>]]
-  : never;
+type ParseOptional<State extends string> = string extends State
+  ? ParserError<"ParseOptional got generic string type">
+  : ParseTypeDesc<State> extends [infer Value, `${infer State}`]
+    ? EatWhitespace<State> extends `)${infer State}`
+      ? [{ type: "optional"; inner: Value }, State]
+    : ParserError<"Unclosed optional">
+  : ParserError<`ParseOptional receive unexpected token ${State}`>;
 
-/** @ignore */
-export type ParseObjectModel<
-  T extends string,
-> = T extends `` ? []
-  : T extends `${infer K}:${infer V},${infer next}`
-    ? [[K, TypeRuntimeModel<V>], ...ParseObjectModel<next>]
-  : T extends `${infer K}:${infer V}` ? [[K, TypeRuntimeModel<V>]]
-  : never;
+type ParseArray<State extends string> = string extends State
+  ? ParserError<"ParseArray got generic string type">
+  : ParseTypeDesc<State> extends [infer Value, `${infer State}`]
+    ? EatWhitespace<State> extends `)${infer State}`
+      ? [{ type: "array"; inner: Value }, State]
+    : ParserError<"Unclosed array">
+  : ParserError<`ParseArray receive unexpected token ${State}`>;
 
-/** @ignore */
-export type ParameterMapper<
-  T extends string,
-> = T extends "" ? []
-  : T extends `x${infer next}` ? [null, ...ParameterMapper<next>]
-  : T extends `n${infer next}` ? [number, ...ParameterMapper<next>]
-  : T extends `s${infer next}` ? [string, ...ParameterMapper<next>]
-  : T extends `b${infer next}` ? [boolean, ...ParameterMapper<next>]
-  : T extends `?(${infer X})${infer next}`
-    ? [NoNull<TypeMapper<X>> | null, ...ParameterMapper<next>]
-  : T extends `[${infer A}]${infer next}`
-    ? [TypeMapper<A>[], ...ParameterMapper<next>]
-  : T extends `{${infer O}}${infer next}`
-    ? [FromEntries<ParseObject<O>>, ...ParameterMapper<next>]
-  : T extends `f(${infer A}->${infer R})${infer next}`
-    ? [(...args: ParameterMapper<A>) => TypeMapper<R>, ...ParameterMapper<next>]
-  : never;
+type AddKeyValue<
+  Memo extends any[],
+  Key extends string,
+  Value extends any,
+> = [...Memo, [Key, Value]];
 
-/**
- * Map type description to type
- * 
- * @example
- * TypeMapper<"s"> = string
- * TypeMapper<"{str:s,num:n}"> = { str: string; num: number }
- */
-export type TypeMapper<
-  T extends string,
-> = ParameterMapper<T> extends [infer S] ? S : never;
+type ParseObject<
+  State extends string,
+  Memo extends any[] = [],
+> = string extends State ? ParserError<"ParseObject got generic string type">
+  : EatWhitespace<State> extends `)${infer State}`
+    ? [{ type: "object"; entries: Memo }, State]
+  : EatWhitespace<State> extends `"${infer Key}"${infer State}`
+    ? EatWhitespace<State> extends `:${infer State}`
+      ? ParseTypeDesc<State> extends [infer Value, `${infer State}`]
+        ? EatWhitespace<State> extends `,${infer State}`
+          ? ParseObject<State, AddKeyValue<Memo, Key, Value>>
+        : EatWhitespace<State> extends `)${infer State}`
+          ? [{ type: "object"; entries: AddKeyValue<Memo, Key, Value> }, State]
+        : ParserError<`ParseObject receive unexpected token ${State}`>
+      : ParserError<`ParseObject receive unexpected value for ${State}`>
+    : ParserError<`ParseObject receive unexpected token ${State}`>
+  : ParserError<`ParseObject receive unexpected token ${State}`>;
 
-/** @ignore */
-export type ParameterRuntimeModel<
-  T extends string,
-> = T extends "" ? []
-  : T extends `x${infer next}`
-    ? [{ type: "simple"; name: "null" }, ...ParameterRuntimeModel<next>]
-  : T extends `n${infer next}`
-    ? [{ type: "simple"; name: "number" }, ...ParameterRuntimeModel<next>]
-  : T extends `s${infer next}`
-    ? [{ type: "simple"; name: "string" }, ...ParameterRuntimeModel<next>]
-  : T extends `b${infer next}`
-    ? [{ type: "simple"; name: "boolean" }, ...ParameterRuntimeModel<next>]
-  : T extends `?(${infer X})${infer next}` ? [
-    { type: "nullable"; inner: TypeRuntimeModel<X> },
-    ...ParameterRuntimeModel<next>,
-  ]
-  : T extends `[${infer X}]${infer next}` ? [
-    { type: "array"; inner: TypeRuntimeModel<X> },
-    ...ParameterRuntimeModel<next>,
-  ]
-  : T extends `{${infer X}}${infer next}` ? [
-    { type: "object"; entries: ParseObjectModel<X> },
-    ...ParameterRuntimeModel<next>,
-  ]
-  : T extends `f(${infer A}->${infer R})${infer next}` ? [
-    {
-      type: "function";
-      arguments: ParameterRuntimeModel<A>;
-      result: TypeRuntimeModel<R>;
-    },
-    ...ParameterRuntimeModel<next>,
-  ]
-  : never;
+type ParseFunctionResult<
+  State extends string,
+  Memo extends any[],
+> = string extends State
+  ? ParserError<"ParseFunctionResult got generic string type">
+  : ParseTypeDesc<State> extends [infer Value, `${infer State}`]
+    ? [{ type: "function"; arguments: Memo; result: Value }, State]
+  : ParserError<`ParseFunctionResult receive unexpected token ${State}`>;
 
-/**
- * Type description to type model
- * 
- * @example
- * TypeRuntimeModel<"s"> = { type: "simple", name: "string" }
- */
+type ParseFunction<
+  State extends string,
+  Memo extends any[] = [],
+> = string extends State ? ParserError<"ParseFunction got generic string type">
+  : EatWhitespace<State> extends `)${infer State}`
+    ? ParseFunctionResult<State, Memo>
+  : ParseTypeDesc<State> extends [infer Value, `${infer State}`]
+    ? ParseFunction<State, [...Memo, Value]>
+  : EatWhitespace<State> extends `,${infer State}` ? ParseFunction<State, Memo>
+  : ParserError<`ParseFunction receive unexpected token ${State}`>;
+
+type ParseTypeDesc<State extends string> = string extends State
+  ? ParserError<"ParseTypeDesc got generic string type">
+  : EatWhitespace<State> extends `string${infer State}`
+    ? [{ type: "simple"; name: "string" }, State]
+  : EatWhitespace<State> extends `number${infer State}`
+    ? [{ type: "simple"; name: "number" }, State]
+  : EatWhitespace<State> extends `boolean${infer State}`
+    ? [{ type: "simple"; name: "boolean" }, State]
+  : EatWhitespace<State> extends `null${infer State}`
+    ? [{ type: "simple"; name: "null" }, State]
+  : EatWhitespace<State> extends `optional${infer State}`
+    ? EatWhitespace<State> extends `(${infer State}` ? ParseOptional<State>
+    : ParserError<`Expect "(" got ${State}`>
+  : EatWhitespace<State> extends `array${infer State}`
+    ? EatWhitespace<State> extends `(${infer State}` ? ParseArray<State>
+    : ParserError<`Expect "(" got ${State}`>
+  : EatWhitespace<State> extends `object${infer State}`
+    ? EatWhitespace<State> extends `(${infer State}` ? ParseObject<State>
+    : ParserError<`Expect "(" got ${State}`>
+  : EatWhitespace<State> extends `function${infer State}`
+    ? EatWhitespace<State> extends `(${infer State}` ? ParseFunction<State>
+    : ParserError<`Expect "(" got ${State}`>
+  : ParserError<`ParseTypeDesc receive unexpected token ${State}`>;
+
 export type TypeRuntimeModel<
   T extends string,
-> = ParameterRuntimeModel<T> extends [infer S] ? S : never;
+> = ParseTypeDesc<T> extends infer Result
+  ? Result extends [infer Value, infer Rest]
+    ? Rest extends string ? EatWhitespace<Rest> extends "" ? Value
+    : ParserError<`Unclosed input ${Rest}`>
+    : ParserError<"Invalid state"> & Rest
+  : Result extends ParserError<any> ? Result
+  : ParserError<"ParseTypeDesc return unexpected result">
+  : ParserError<"ParseTypeDesc returned uninferrable Result">;
 
-/** @ignore */
-export type TypeNames = "simple" | "nullable" | "array" | "object" | "function";
-/** @ignore */
+type FromEntries<T> = T extends [infer Key, unknown][] ? {
+  [K in Cast<Key, string>]: ModelToType<
+    Extract<ArrayElement<T>, [K, unknown]>[1]
+  >;
+}
+  : { [key in string]: unknown };
+
+type MapArgs<
+  Arguments,
+  Result,
+> = {
+  [K in keyof Arguments]: ModelToType<Arguments[K]>;
+} extends infer Args
+  ? Args extends any[] ? (...args: Args) => ModelToType<Result> : never
+  : never;
+
+type ModelToType<
+  T,
+> = T extends { type: "simple"; name: "null" } ? null
+  : T extends { type: "simple"; name: "string" } ? string
+  : T extends { type: "simple"; name: "number" } ? number
+  : T extends { type: "simple"; name: "boolean" } ? boolean
+  : T extends { type: "optional"; inner: infer X } ? ModelToType<X> | null
+  : T extends { type: "array"; inner: infer X } ? ModelToType<X>[]
+  : T extends { type: "object"; entries: infer X } ? FromEntries<X>
+  : T extends { type: "function"; arguments: infer Args; result: infer Res }
+    ? MapArgs<Args, Res>
+  : never;
+
+export type TypeMapper<
+  T extends string,
+> = ModelToType<TypeRuntimeModel<T>>;
+
+export type TypeNames = "simple" | "optional" | "array" | "object" | "function";
 export type SimpleTypeNames = "null" | "number" | "string" | "boolean";
-
-/** @ignore */
 export type LooseObjectModel = Array<[string, LooseTypeRuntimeModel]>;
-
-/** @ignore */
 export type LooseSimpleTypeRuntimeModel<
   T extends SimpleTypeNames = SimpleTypeNames,
 > = {
   type: "simple";
   name: T;
 };
-
-/** @ignore */
 export type LooseTypeRuntimeModel<
   X extends TypeNames = TypeNames,
 > = X extends "simple" ? LooseSimpleTypeRuntimeModel
-  : X extends "nullable" | "array" ? { type: X; inner: LooseTypeRuntimeModel }
+  : X extends "optional" | "array" ? { type: X; inner: LooseTypeRuntimeModel }
   : X extends "object" ? { type: X; entries: LooseObjectModel }
   : X extends "function" ? {
     type: X;

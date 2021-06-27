@@ -15,7 +15,9 @@ import { evalModel, parseModel } from "./validator.ts";
 export class VarModel<M extends string = string> {
   model: TypeRuntimeModel<M>;
   constructor(spec: TypeRuntimeModel<M> | M, public value: TypeMapper<M>) {
-    this.model = typeof spec == "string" ? parseModel(spec) : spec;
+    this.model = typeof spec == "string"
+      ? parseModel(spec) as TypeRuntimeModel<M>
+      : spec;
     if (!evalModel(this.model, value)) {
       throw new TypeError("Model validation failed");
     }
@@ -34,22 +36,22 @@ export function lit(): VarModel<"x">;
  */
 export function lit(val?: number | string | boolean): unknown {
   if (val == null) {
-    return new VarModel("x", null);
+    return new VarModel("null", null);
   }
   switch (typeof val) {
     case "number":
-      return new VarModel("n", val);
+      return new VarModel("number", val);
     case "string":
-      return new VarModel("s", val);
+      return new VarModel("string", val);
     case "boolean":
-      return new VarModel("b", val);
+      return new VarModel("boolean", val);
   }
   throw new TypeError(`invalid value ${val}`);
 }
 
-function extractNullable(x: LooseTypeRuntimeModel): LooseTypeRuntimeModel {
-  if (x.type === "nullable") {
-    return extractNullable(x.inner);
+function extractOptional(x: LooseTypeRuntimeModel): LooseTypeRuntimeModel {
+  if (x.type === "optional") {
+    return extractOptional(x.inner);
   }
   return x;
 }
@@ -86,10 +88,10 @@ function mergeType(
   if (a == null) {
     return b;
   }
-  if (a.type == "nullable" || b.type == "nullable") {
+  if (a.type == "optional" || b.type == "optional") {
     return {
-      type: "nullable",
-      inner: mergeType(extractNullable(a), extractNullable(b)),
+      type: "optional",
+      inner: mergeType(extractOptional(a), extractOptional(b)),
     };
   }
   switch (a.type) {
@@ -199,7 +201,7 @@ export class VM {
           case "??": {
             const left = this.#fetchType(expr.left, self);
             const right = this.#fetchType(expr.right, self);
-            return mergeType(extractNullable(left), right);
+            return mergeType(extractOptional(left), right);
           }
           case "|":
           case "^":
@@ -223,7 +225,7 @@ export class VM {
           case "!==": {
             const left = this.#fetchType(expr.left, self);
             const right = this.#fetchType(expr.right, self);
-            const merged = extractNullable(mergeType(left, right));
+            const merged = extractOptional(mergeType(left, right));
             assertType(merged, "simple");
             return { type: "simple", name: "boolean" };
           }
@@ -248,7 +250,7 @@ export class VM {
             const left = this.#fetchType(expr.left, self);
             const right = this.#fetchType(expr.right, self);
             assertType(right, "array");
-            const merged = extractNullable(mergeType(left, right.inner));
+            const merged = extractOptional(mergeType(left, right.inner));
             assertType(merged, "simple");
             return { type: "simple", name: "boolean" };
           }
@@ -287,7 +289,7 @@ export class VM {
       case "Identifier": {
         const tmp = this.#environment.get(expr.name);
         if (tmp != null) {
-          return tmp.model as LooseTypeRuntimeModel;
+          return tmp.model as unknown as LooseTypeRuntimeModel;
         } else {
           throw new ReferenceError(`${JSON.stringify(expr.name)} not found`);
         }
@@ -307,7 +309,7 @@ export class VM {
           assertType(obj, "array");
           const prop = this.#fetchType(expr.property, self);
           assertSimpleType(prop, "number");
-          return { type: "nullable", inner: extractNullable(obj.inner) };
+          return { type: "optional", inner: extractOptional(obj.inner) };
         } else {
           assertType(obj, "object");
           if (expr.property.type === "Identifier") {
